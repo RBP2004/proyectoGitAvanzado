@@ -1,0 +1,49 @@
+name: CD main
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
+
+      - name: Incrementar versión
+        shell: bash
+        run: |
+          ACTUAL=$(grep -o 'AppVersion-[0-9]*' README.md | head -1 | cut -d'-' -f2)
+          NUEVA=$((ACTUAL + 1))
+          FECHA=$(date '+%Y-%m-%d %H:%M:%S')
+          sed -i "s/AppVersion-$ACTUAL/AppVersion-$NUEVA - $FECHA/" README.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "Incrementar versión desde CD [skip ci]"
+          git push
+
+  validate-prod:
+    needs: bump-version
+    runs-on: self-hosted
+    steps:
+      - name: Validar PROD_TOKEN
+        env:
+          TOKEN: ${{ secrets.PROD_TOKEN }}
+        run: |
+          if ($env:TOKEN -eq $env:LOCAL_PROD_TOKEN) {
+            Write-Host "PROD_TOKEN correcto"
+          } else {
+            Write-Host "PROD_TOKEN incorrecto"
+            exit 1
+          }
